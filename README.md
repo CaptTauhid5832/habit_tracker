@@ -27,10 +27,14 @@ Habitt is a Flutter app that helps users build good habits and track their daily
 ## Project structure
 
 ```
-habit_tracker/
-├── lib/            Dart source code (screens listed above)
-├── pubspec.yaml    App settings and dependencies
-└── README.md
+habit_tracker/   (main branch)
+├── lib/
+├── pubspec.yaml
+├── pubspec.lock
+├── README.md
+├── Uer_Stories.md
+├── issue_templete.md
+└── product_backlog.md
 ```
 
 ## Dependencies
