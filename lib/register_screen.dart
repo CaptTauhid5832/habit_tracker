@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'habit_tracker_screen.dart';
 import 'login_screen.dart';
@@ -14,6 +15,10 @@ class RegisterScreen extends StatefulWidget {
 class _RegisterScreenState extends State<RegisterScreen> {
   final _nameController = TextEditingController();
   final _usernameController = TextEditingController();
+  final _emailController = TextEditingController();
+  final _passwordController = TextEditingController();
+  bool _obscurePassword = true;
+  String? _errorMessage;
   double _age = 25; // Default age set to 25
   String _country = 'United States';
   List<String> _countries = [];
@@ -70,14 +75,61 @@ class _RegisterScreenState extends State<RegisterScreen> {
     );
   }
 
-  void _register() async {
-    final name = _nameController.text;
-    final username = _usernameController.text;
+  void _showError(String message) {
+    setState(() => _errorMessage = message);
+    _showToast(message);
+  }
 
-    if (username.isEmpty || name.isEmpty) {
-      _showToast('Please fill in all fields');
+  @override
+  void dispose() {
+    _nameController.dispose();
+    _usernameController.dispose();
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  void _register() async {
+    final name = _nameController.text.trim();
+    final username = _usernameController.text.trim();
+    final email = _emailController.text.trim().toLowerCase();
+    final password = _passwordController.text;
+
+    if (name.isEmpty || username.isEmpty || email.isEmpty || password.isEmpty) {
+      _showError('Please fill in all fields');
       return;
     }
+
+    final emailPattern = RegExp(r'^[^@\s]+@[^@\s]+\.[^@\s]+$');
+    if (!emailPattern.hasMatch(email)) {
+      _showError('Please enter a valid email address');
+      return;
+    }
+
+    if (password.length < 6) {
+      _showError('Password must be at least 6 characters');
+      return;
+    }
+
+    final prefs = await SharedPreferences.getInstance();
+
+    // Block registering an email that already has an account
+    final existingEmail = prefs.getString('email');
+    if (existingEmail != null && existingEmail == email) {
+      _showError('An account with this email already exists');
+      return;
+    }
+
+    await prefs.setString('name', name);
+    await prefs.setString('username', username);
+    await prefs.setString('email', email);
+    await prefs.setString('password', password);
+    await prefs.setDouble('age', _age);
+    await prefs.setString('country', _country);
+    await prefs.setStringList('selectedHabits', selectedHabits);
+
+    if (!mounted) return;
+    setState(() => _errorMessage = null);
 
     Navigator.pushReplacement(
       context,
@@ -130,6 +182,12 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 _buildInputField(
                     _usernameController, 'Username', Icons.alternate_email),
                 const SizedBox(height: 10),
+                _buildInputField(_emailController, 'Email', Icons.email,
+                    keyboardType: TextInputType.emailAddress),
+                const SizedBox(height: 10),
+                _buildInputField(_passwordController, 'Password', Icons.lock,
+                    isPassword: true),
+                const SizedBox(height: 10),
                 Text('Age: ${_age.round()}',
                     style: const TextStyle(color: Colors.white, fontSize: 18)),
                 Slider(
@@ -156,7 +214,15 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   children: availableHabits.map((habit) {
                     final isSelected = selectedHabits.contains(habit);
                     return GestureDetector(
-                      onTap: () => null,
+                      onTap: () {
+                        setState(() {
+                          if (isSelected) {
+                            selectedHabits.remove(habit);
+                          } else {
+                            selectedHabits.add(habit);
+                          }
+                        });
+                      },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 20, vertical: 10),
@@ -179,6 +245,30 @@ class _RegisterScreenState extends State<RegisterScreen> {
                   }).toList(),
                 ),
                 const SizedBox(height: 20),
+                if (_errorMessage != null)
+                  Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.red.shade50,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: Colors.red.shade400),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.error_outline, color: Colors.red.shade700),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _errorMessage!,
+                            style: TextStyle(
+                                color: Colors.red.shade700, fontSize: 16),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
                 Center(
                   child: ElevatedButton(
                     onPressed: _register,
@@ -200,6 +290,27 @@ class _RegisterScreenState extends State<RegisterScreen> {
                     ),
                   ),
                 ),
+                const SizedBox(height: 12),
+                Center(
+                  child: TextButton(
+                    onPressed: () {
+                      Navigator.pushReplacement(
+                        context,
+                        MaterialPageRoute(
+                            builder: (context) => const LoginScreen()),
+                      );
+                    },
+                    child: const Text(
+                      'Already have an account? Login',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        decoration: TextDecoration.underline,
+                        decorationColor: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
@@ -209,7 +320,8 @@ class _RegisterScreenState extends State<RegisterScreen> {
   }
 
   Widget _buildInputField(
-      TextEditingController controller, String hint, IconData icon) {
+      TextEditingController controller, String hint, IconData icon,
+      {bool isPassword = false, TextInputType? keyboardType}) {
     return Container(
       decoration: BoxDecoration(
         color: Colors.white,
@@ -217,8 +329,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
       ),
       child: TextField(
         controller: controller,
+        obscureText: isPassword && _obscurePassword,
+        keyboardType: keyboardType,
         decoration: InputDecoration(
           prefixIcon: Icon(icon, color: Colors.blue.shade700),
+          suffixIcon: isPassword
+              ? IconButton(
+                  icon: Icon(
+                    _obscurePassword ? Icons.visibility_off : Icons.visibility,
+                    color: Colors.blue.shade700,
+                  ),
+                  onPressed: () =>
+                      setState(() => _obscurePassword = !_obscurePassword),
+                )
+              : null,
           hintText: hint,
           border: InputBorder.none,
           contentPadding:
